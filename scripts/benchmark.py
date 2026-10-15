@@ -39,9 +39,12 @@ def allocate_port():
 
 def editor_command(editor, home, workspace, port):
     binary = ROOT / '.tmp/apps' / editor['id'] / editor['binary']
-    return [str(binary), '--no-sandbox', '--disable-gpu', '--disable-extensions',
-            '--disable-workspace-trust', '--new-window',
-            f'--user-data-dir={home / "profile"}', f'--remote-debugging-port={port}', str(workspace)]
+    arguments = ['--no-sandbox', '--disable-gpu', '--disable-extensions',
+                 '--disable-workspace-trust', '--new-window',
+                 f'--user-data-dir={home / "profile"}', f'--remote-debugging-port={port}']
+    if editor['id'] == 'vscode':
+        arguments.extend(['--ozone-platform=x11', '--skip-welcome', '--skip-release-notes'])
+    return [str(binary), *arguments, str(workspace)]
 
 
 def fixture_matches(editor_id, state, fixture):
@@ -84,19 +87,27 @@ def trial(editor):
         stdout_path, stderr_path = root / 'stdout', root / 'stderr'
         child = None
         page = None
+        stage = 'launch'
+        before = None
+        click = None
+        state = None
         try:
             with stdout_path.open('w') as stdout, stderr_path.open('w') as stderr:
                 child = subprocess.Popen(command, cwd=workspace, env=env, stdout=stdout,
                                          stderr=stderr, start_new_session=True)
+                stage = 'connect-cdp'
                 page = Page(port, timeout=120)
+                stage = 'settle'
                 time.sleep(10)
+                stage = 'read-before-state'
                 before = page.document_state(editor['id'])
                 if fixture_matches(editor['id'], before, fixture):
                     raise RuntimeError('fixture was already open before the measured explorer click')
+                stage = 'click-explorer-item'
                 click = page.click_tree_item(fixture.name)
                 started = click.pop('started')
                 deadline = started + TIMEOUT_SECONDS
-                state = {}
+                stage = 'wait-for-visible-document'
                 while time.monotonic() < deadline:
                     state = page.document_state(editor['id'])
                     if fixture_matches(editor['id'], state, fixture):
@@ -108,7 +119,9 @@ def trial(editor):
                     time.sleep(.02)
                 raise TimeoutError(f'open completion not observed within {TIMEOUT_SECONDS}s; last state={state!r}')
         except Exception as error:
-            return {'valid': False, 'error': str(error), 'command': command,
+            return {'valid': False, 'stage': stage, 'error': str(error), 'command': command,
+                    'cdpTarget': page.target_url if page else None,
+                    'before': before, 'click': click, 'lastState': state,
                     'stdout': stdout_path.read_text(errors='replace')[-8000:] if stdout_path.exists() else '',
                     'stderr': stderr_path.read_text(errors='replace')[-8000:] if stderr_path.exists() else ''}
         finally:

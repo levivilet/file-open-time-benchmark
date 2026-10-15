@@ -15,7 +15,8 @@ class Page:
                     targets = json.load(response)
                 target = next(t for t in targets if t['type'] == 'page' and
                               not t['url'].startswith('devtools:'))
-                self.socket = websocket.create_connection(target['webSocketDebuggerUrl'], timeout=5,
+                self.target_url = target['url']
+                self.socket = websocket.create_connection(target['webSocketDebuggerUrl'], timeout=30,
                                                            suppress_origin=True)
                 self.counter = 0
                 self.call('Page.enable')
