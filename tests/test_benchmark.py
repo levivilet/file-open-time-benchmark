@@ -29,11 +29,14 @@ class BenchmarkTest(unittest.TestCase):
         self.assertIn('mousePressed', benchmark.PROTOCOL['boundary'])
         self.assertIn('visible editor text', benchmark.PROTOCOL['completion'])
         self.assertEqual(benchmark.PROTOCOL['repeats'], 3)
+        self.assertIn('U+00A0', benchmark.PROTOCOL['contentNormalization'])
 
     def test_fixture_completion_requires_identity_and_exact_visible_content(self):
         fixture = Path('/tmp/workspace/hello.txt')
         self.assertTrue(benchmark.fixture_matches('vscode',
                                                    {'identity': 'hello.txt, Tab', 'content': 'hello world'}, fixture))
+        self.assertTrue(benchmark.fixture_matches('vscode',
+                                                   {'identity': 'hello.txt, Tab', 'content': 'hello\u00a0world'}, fixture))
         self.assertTrue(benchmark.fixture_matches('lvce',
                                                    {'identity': '/tmp/workspace/hello.txt', 'content': 'hello world'}, fixture))
         self.assertFalse(benchmark.fixture_matches('lvce',
@@ -42,6 +45,8 @@ class BenchmarkTest(unittest.TestCase):
                                                     {'identity': 'hello.txt', 'content': 'hello world!'}, fixture))
         self.assertFalse(benchmark.fixture_matches('vscode',
                                                     {'identity': 'hello.txt', 'content': 'hello world\n'}, fixture))
+        self.assertFalse(benchmark.fixture_matches('vscode',
+                                                    {'identity': 'hello.txt', 'content': 'hello  world'}, fixture))
 
     def test_report_rejects_failed_open_and_bad_duration_or_evidence(self):
         editor = report.EDITORS[0]

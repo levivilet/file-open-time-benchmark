@@ -22,6 +22,7 @@ PROTOCOL = {
     'action': 'single physical-coordinate CDP mouse click on the unique accessible explorer tree item named hello.txt',
     'boundary': 'monotonic clock immediately before the CDP mousePressed/mouseReleased click through the first poll confirming the selected document identity and visible contents',
     'completion': 'selected tab identifies the fixture file and the visible editor text is exactly hello world',
+    'contentNormalization': 'normalize renderer-returned U+00A0 nonbreaking spaces to U+0020 before exact content comparison; do not trim or otherwise normalize',
     'observer': 'CDP accessibility tree lookup and 20ms polling plus protocol round trips; click dispatch and observer overhead are included in elapsed time',
     'excluded': 'fixture and workspace preparation, editor launch, profile creation, window readiness, ten-second settling period, and process cleanup',
     'profile': 'fresh HOME, XDG directories and Chromium user-data directory for every trial',
@@ -56,7 +57,10 @@ def fixture_matches(editor_id, state, fixture):
         identity_matches = identity_path == str(fixture)
     else:
         identity_matches = fixture.name in identity
-    return identity_matches and state.get('content') == CONTENT
+    content = state.get('content')
+    if isinstance(content, str):
+        content = content.replace('\u00a0', ' ')
+    return identity_matches and content == CONTENT
 
 
 def trial(editor):
@@ -113,7 +117,9 @@ def trial(editor):
                     if fixture_matches(editor['id'], state, fixture):
                         ended = time.monotonic()
                         return {'valid': True, 'seconds': ended - started,
-                                'documentIdentity': state['identity'], 'visibleContent': state['content'],
+                                'documentIdentity': state['identity'],
+                                'visibleContent': state['content'].replace('\u00a0', ' '),
+                                'observedContent': state['content'],
                                 'click': click, 'pollIntervalMs': 20,
                                 'timeoutSeconds': TIMEOUT_SECONDS}
                     time.sleep(.02)

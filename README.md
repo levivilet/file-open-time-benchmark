@@ -17,7 +17,9 @@ named `hello.txt` and sends a CDP mouse click at its on-screen bounds.
 
 The monotonic measurement starts immediately before the mouse press is
 dispatched and ends when the selected document identifies `hello.txt` and its
-visible editor text equals the expected contents. Click dispatch and the CDP
+visible editor text equals the expected contents. VS Code's rendered DOM uses
+nonbreaking spaces to display ordinary spaces, so the comparison normalizes
+only U+00A0 to U+0020; the raw observed text is retained in each trial. Click dispatch and the CDP
 observation overhead are included. Workspace preparation, editor launch,
 readiness, settling and cleanup are excluded. Each editor runs three fresh
 profile trials. The page compares medians and lists every duration; it does not
