@@ -1,0 +1,82 @@
+"""Small CDP client for real explorer clicks and visible-document checks."""
+import json
+import time
+import urllib.request
+
+
+class Page:
+    def __init__(self, port, timeout=60):
+        import websocket
+
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                with urllib.request.urlopen(f'http://127.0.0.1:{port}/json/list', timeout=2) as response:
+                    targets = json.load(response)
+                target = next(t for t in targets if t['type'] == 'page' and
+                              not t['url'].startswith('devtools:'))
+                self.target_url = target['url']
+                self.socket = websocket.create_connection(target['webSocketDebuggerUrl'], timeout=30,
+                                                           suppress_origin=True)
+                self.counter = 0
+                self.call('Page.enable')
+                self.call('Runtime.enable')
+                self.call('Accessibility.enable')
+                return
+            except (OSError, StopIteration):
+                if time.monotonic() >= deadline:
+                    raise TimeoutError('Editor never exposed a page over CDP')
+                time.sleep(.25)
+
+    def call(self, method, **params):
+        self.counter += 1
+        self.socket.send(json.dumps({'id': self.counter, 'method': method, 'params': params}))
+        while True:
+            message = json.loads(self.socket.recv())
+            if message.get('id') == self.counter:
+                if 'error' in message:
+                    raise RuntimeError(message['error'])
+                return message['result']
+
+    def evaluate(self, expression):
+        result = self.call('Runtime.evaluate', expression=expression, returnByValue=True,
+                           awaitPromise=True)
+        if result.get('exceptionDetails'):
+            raise RuntimeError(result['exceptionDetails'])
+        return result['result'].get('value')
+
+    def click_tree_item(self, label):
+        tree = self.call('Accessibility.getFullAXTree')['nodes']
+        matches = [node for node in tree if node.get('role', {}).get('value') == 'treeitem' and
+                   node.get('name', {}).get('value') == label and node.get('backendDOMNodeId')]
+        if len(matches) != 1:
+            raise RuntimeError(f'expected one visible explorer tree item named {label!r}; found {len(matches)}')
+        model = self.call('DOM.getBoxModel', backendNodeId=matches[0]['backendDOMNodeId'])
+        quad = model['model']['border']
+        x = sum(quad[0::2]) / 4
+        y = sum(quad[1::2]) / 4
+        viewport = self.call('Page.getLayoutMetrics')['cssVisualViewport']
+        if not (0 <= x < viewport['clientWidth'] and 0 <= y < viewport['clientHeight']):
+            raise RuntimeError(f'explorer item is outside the visible viewport: ({x}, {y})')
+        self.call('Input.dispatchMouseEvent', type='mouseMoved', x=x, y=y)
+        started = time.monotonic()
+        self.call('Input.dispatchMouseEvent', type='mousePressed', x=x, y=y, button='left', clickCount=1)
+        self.call('Input.dispatchMouseEvent', type='mouseReleased', x=x, y=y, button='left', clickCount=1)
+        return {'role': 'treeitem', 'name': label, 'x': x, 'y': y, 'started': started}
+
+    def document_state(self, editor_id):
+        if editor_id == 'lvce':
+            expression = """(() => ({
+              identity: document.querySelector('.MainTabSelected')?.getAttribute('title') || '',
+              content: document.querySelector('.EditorContent')?.innerText ??
+                document.querySelector('.Editor')?.innerText ?? ''
+            }))()"""
+        else:
+            expression = """(() => ({
+              identity: document.querySelector('.monaco-workbench .tabs-container .tab.active')?.getAttribute('aria-label') || '',
+              content: document.querySelector('.monaco-editor .view-lines')?.innerText || ''
+            }))()"""
+        return self.evaluate(expression)
+
+    def close(self):
+        self.socket.close()
