@@ -27,7 +27,13 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     trials = [benchmark.trial(editor, output / f'trace-{index}.json', observe_dom=True) for index in range(1, 4)]
     observer_trials = [benchmark.trial(editor, observe_dom=True) for _ in range(3)]
-    for item in [*trials, *observer_trials]:
+    ablated_trials = ([benchmark.trial(editor, output / f'ablated-trace-{index}.json',
+                                      observe_dom=True, ablate_frames=True)
+                       for index in range(1, 4)] if args.variant == 'candidate' else [])
+    ablated_observer_trials = ([benchmark.trial(editor, observe_dom=True, ablate_frames=True)
+                                for _ in range(3)] if args.variant == 'candidate' else [])
+    all_trials = [*trials, *observer_trials, *ablated_trials, *ablated_observer_trials]
+    for item in all_trials:
         if item['valid']:
             observations = item['domObservations']
             if observations['dropped'] or not any(entry['exact'] for entry in observations['entries']):
@@ -40,6 +46,14 @@ def main():
         item['rpcMarkerCount'] = len(markers)
         if not markers:
             item.update(valid=False, error='trace contains no RPC markers')
+    for index, item in enumerate(ablated_trials, 1):
+        if not item['valid']:
+            continue
+        events = json.loads((output / f'ablated-trace-{index}.json').read_text())['traceEvents']
+        item['immediateFrameCount'] = sum(event.get('name') == 'file-open-ablation:immediate-frame'
+                                          for event in events)
+        if not item['immediateFrameCount']:
+            item.update(valid=False, error='frame ablation did not execute')
     (output / 'diagnostic.json').write_text(json.dumps({
         'diagnosticOnly': True, 'editor': editor,
         'host': {'machine': platform.machine(), 'kernel': platform.release(),
@@ -49,8 +63,10 @@ def main():
         'note': 'Tracing perturbs timing. These trials are excluded from the protocol-v1 report. '
                 'CDP durations include concurrent application work; do not subtract them to infer app time.',
         'trials': trials, 'observerOnlyTrials': observer_trials,
+        'frameAblationTrials': ablated_trials,
+        'frameAblationObserverOnlyTrials': ablated_observer_trials,
     }, indent=2) + '\n')
-    if not all(item['valid'] for item in [*trials, *observer_trials]):
+    if not all(item['valid'] for item in all_trials):
         raise SystemExit('diagnostic capture failed; inspect diagnostic.json')
 
 

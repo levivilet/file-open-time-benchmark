@@ -80,6 +80,20 @@ class Page:
                              'disabled-by-default-devtools.timeline')
         self.timings = []
 
+    def ablate_frame_waits(self):
+        self.call('Target.setAutoAttach', autoAttach=True, waitForDebuggerOnStart=False,
+                  flatten=True)
+        workers = [event['params'] for event in self.events
+                   if event.get('method') == 'Target.attachedToTarget'
+                   and '/renderer-worker/' in event['params']['targetInfo']['url']]
+        if len(workers) != 1:
+            raise RuntimeError(f'expected one renderer worker, found {len(workers)}')
+        result = self.call('Runtime.evaluate', session_id=workers[0]['sessionId'],
+                           expression=Path(__file__).with_name('frame_ablation.js').read_text(),
+                           returnByValue=True)
+        if result.get('exceptionDetails') or result.get('result', {}).get('value') is not True:
+            raise RuntimeError('frame-wait ablation injection failed')
+
     def start_dom_observer(self, fixture):
         expression = Path(__file__).with_name('dom_trace.js').read_text()
         if self.evaluate(f'({expression})({json.dumps(str(fixture))})') is not True:

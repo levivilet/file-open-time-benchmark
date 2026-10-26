@@ -63,7 +63,7 @@ def fixture_matches(editor_id, state, fixture):
     return identity_matches and content == CONTENT
 
 
-def trial(editor, trace_path=None, observe_dom=False):
+def trial(editor, trace_path=None, observe_dom=False, ablate_frames=False):
     with tempfile.TemporaryDirectory(prefix='file-open-time-') as temporary:
         root = Path(temporary)
         home = root / 'home'
@@ -106,6 +106,8 @@ def trial(editor, trace_path=None, observe_dom=False):
                 stage = 'read-before-state'
                 if trace_path is not None:
                     page.start_trace()
+                if ablate_frames:
+                    page.ablate_frame_waits()
                 if observe_dom:
                     page.start_dom_observer(fixture)
                 before = page.document_state(editor['id'])
@@ -134,6 +136,7 @@ def trial(editor, trace_path=None, observe_dom=False):
                                    if trace_path is not None else {}),
                                 **({'diagnosticOnly': True, 'domObservations': observations,
                                     'observerOnly': trace_path is None,
+                                    'frameWaitAblation': ablate_frames,
                                     'observerCdpCalls': observer_timings,
                                     'measurementStarted': started, 'measurementEnded': ended}
                                    if observe_dom else {}),

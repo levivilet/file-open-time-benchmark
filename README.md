@@ -91,3 +91,12 @@ capture includes the observer callback count and read cost. Reading
 readiness diagnostics, not proof of pixels presented. Compare observer-only
 trials with the separate untraced controls to assess perturbation. Neither kind
 of diagnostic trial is published as protocol-v1 acceptance evidence.
+
+The candidate diagnostic job also runs three traced and three observer-only
+frame-wait ablations. A temporary hook in the renderer worker replaces animation
+frame requests with timers and synthetic eligibility timestamps, removing both
+vsync waits and the scheduler's 16 ms throttle. Trace marks and observed elapsed
+times retain real clocks. This deliberately broad ablation tests the causal
+contribution of scheduling barriers; it is not a proposed production policy,
+correctness coverage, or accepted benchmark result. Normal diagnostics record
+frame requests/callbacks without replacing them. All hooks are disposable.

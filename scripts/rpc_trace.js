@@ -21,6 +21,17 @@
     mark('send', port, args[0]);
     return Reflect.apply(original, this, args);
   };
+  if (location.href.includes('/renderer-worker/')) {
+    const request = globalThis.requestAnimationFrame;
+    globalThis.requestAnimationFrame = callback => {
+      const id = request.call(globalThis, timestamp => {
+        performance.mark('file-open-frame:callback:' + id);
+        callback(timestamp);
+      });
+      performance.mark('file-open-frame:request:' + id);
+      return id;
+    };
+  }
   globalThis.__fileOpenRpcTrace = true;
   return true;
 })()
