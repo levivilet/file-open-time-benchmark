@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--variant', choices=['baseline', 'candidate', 'candidate-coalesced'], required=True)
+    parser.add_argument('--variant', choices=['baseline', 'candidate'], required=True)
     args = parser.parse_args()
     lock = 'baseline.lock.json' if args.variant == 'baseline' else 'editors.lock.json'
     editor = next(item for item in json.loads((ROOT / 'config' / lock).read_text())
@@ -25,17 +25,13 @@ def main():
     install.extract(editor, archive, apps / 'lvce')
     output = ROOT / 'results' / 'diagnostic' / args.variant
     output.mkdir(parents=True, exist_ok=True)
-    trials = [benchmark.trial(editor, output / f'trace-{index}.json',
-                              skip_first_pending=args.variant == 'candidate-coalesced') for index in range(1, 4)]
+    trials = [benchmark.trial(editor, output / f'trace-{index}.json') for index in range(1, 4)]
     for index, item in enumerate(trials, 1):
         if not item['valid']:
             continue
         events = json.loads((output / f'trace-{index}.json').read_text())['traceEvents']
         markers = [event for event in events if event.get('name', '').startswith('file-open-rpc:')]
         item['rpcMarkerCount'] = len(markers)
-        if args.variant == 'candidate-coalesced' and not any(
-                event.get('name') == 'file-open-ablation:skip-first-render' for event in events):
-            item.update(valid=False, error='ablation did not skip the first render')
         if not markers:
             item.update(valid=False, error='trace contains no RPC markers')
     (output / 'diagnostic.json').write_text(json.dumps({

@@ -59,7 +59,7 @@ includes the two required editors.
 
 `python3 scripts/diagnose.py --variant baseline` (or `candidate`) under Xvfb
 runs three additional fresh-profile LVCE opens with Chromium task tracing and temporary RPC markers.
-The baseline lock pins the official v0.126.1 artifact; the candidate uses the
+The baseline lock pins the official v0.126.2 artifact; the candidate uses the
 current editor lock. CI uploads these as separate `diagnostic-*` artifacts.
 Trace JSON can be opened in Perfetto or Chrome's trace viewer. CDP injects
 MessagePort wrappers into disposable worker contexts, recording only method
@@ -76,10 +76,6 @@ and must not be subtracted from elapsed time to infer application latency.
 Tracing can perturb scheduling, so these trials are never included in the
 published timing report. The regular three-trial protocol stays unchanged.
 
-The diagnostic `candidate-coalesced` variant is a controlled ablation: a
-CDP-injected hook acknowledges the first main-area pending render without
-forwarding it. The later focus render must still produce the expected document.
-It tests whether two successive frame commits contribute avoidable latency;
-it is not a production fix or lifecycle-regression validation. This variant is
-kept separate from both ordinary release measurements and the report. Each
-trace must contain the explicit ablation marker to count as a valid experiment.
+`control-lvce` contains three additional untraced protocol-v1 trials of the
+baseline package from the same workflow. Compare these with the candidate’s
+ordinary `open-lvce` results; instrumented diagnostics remain separate.

@@ -19,15 +19,6 @@
       this.addEventListener('message', event => mark('receive', port, event.data));
     }
     mark('send', port, args[0]);
-    if (globalThis.__fileOpenSkipFirstPending && args[0]?.method === 'Layout.renderMainAreaPending') {
-      globalThis.__fileOpenSkipFirstPending = false;
-      performance.mark('file-open-ablation:skip-first-render');
-      // Controlled diagnostic ablation only: acknowledge the first render without
-      // sending it. The subsequent focus render must still produce the document.
-      const response = { jsonrpc: '2.0', id: args[0].id, result: undefined };
-      queueMicrotask(() => this.dispatchEvent(new MessageEvent('message', { data: response })));
-      return;
-    }
     return Reflect.apply(original, this, args);
   };
   globalThis.__fileOpenRpcTrace = true;

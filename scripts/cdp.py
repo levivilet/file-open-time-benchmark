@@ -58,7 +58,7 @@ class Page:
                     return self.events.pop(index)['params']
             self.events.append(json.loads(self.socket.recv()))
 
-    def start_trace(self, skip_first_pending=False):
+    def start_trace(self):
         self.call('Target.setAutoAttach', autoAttach=True, waitForDebuggerOnStart=False,
                   flatten=True)
         workers = [event['params'] for event in self.events
@@ -66,19 +66,12 @@ class Page:
                    and event['params']['targetInfo']['type'] == 'worker']
         expression = Path(__file__).with_name('rpc_trace.js').read_text()
         self.traced_workers = []
-        ablation_installed = False
         for worker in workers:
-            worker_expression = expression
-            if skip_first_pending and '/main-area-worker/' in worker['targetInfo']['url']:
-                worker_expression = 'globalThis.__fileOpenSkipFirstPending = true;\n' + expression
-                ablation_installed = True
             result = self.call('Runtime.evaluate', session_id=worker['sessionId'],
-                               expression=worker_expression, returnByValue=True)
+                               expression=expression, returnByValue=True)
             if result.get('exceptionDetails') or result.get('result', {}).get('value') is not True:
                 raise RuntimeError(f'RPC trace injection failed: {worker["targetInfo"]["url"]}')
             self.traced_workers.append(worker['targetInfo']['url'])
-        if skip_first_pending and not ablation_installed:
-            raise RuntimeError('ablation requires main-area-worker target')
         if not self.traced_workers:
             raise RuntimeError('no existing workers attached for RPC tracing')
         self.call('Tracing.start', transferMode='ReturnAsStream',
