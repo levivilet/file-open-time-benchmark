@@ -63,7 +63,7 @@ def fixture_matches(editor_id, state, fixture):
     return identity_matches and content == CONTENT
 
 
-def trial(editor, trace_path=None):
+def trial(editor, trace_path=None, observe_dom=False):
     with tempfile.TemporaryDirectory(prefix='file-open-time-') as temporary:
         root = Path(temporary)
         home = root / 'home'
@@ -106,6 +106,8 @@ def trial(editor, trace_path=None):
                 stage = 'read-before-state'
                 if trace_path is not None:
                     page.start_trace()
+                if observe_dom:
+                    page.start_dom_observer(fixture)
                 before = page.document_state(editor['id'])
                 if fixture_matches(editor['id'], before, fixture):
                     raise RuntimeError('fixture was already open before the measured explorer click')
@@ -119,6 +121,8 @@ def trial(editor, trace_path=None):
                     if fixture_matches(editor['id'], state, fixture):
                         ended = time.monotonic()
                         timings = None
+                        observer_timings = list(page.timings) if observe_dom else None
+                        observations = page.dom_observations() if observe_dom else None
                         if trace_path is not None:
                             timings = list(page.timings)
                             stage = 'stop-trace'
@@ -128,6 +132,11 @@ def trial(editor, trace_path=None):
                                     'tracedWorkers': page.traced_workers,
                                     'measurementStarted': started, 'measurementEnded': ended}
                                    if trace_path is not None else {}),
+                                **({'diagnosticOnly': True, 'domObservations': observations,
+                                    'observerOnly': trace_path is None,
+                                    'observerCdpCalls': observer_timings,
+                                    'measurementStarted': started, 'measurementEnded': ended}
+                                   if observe_dom else {}),
                                 'documentIdentity': state['identity'],
                                 'visibleContent': state['content'].replace('\u00a0', ' '),
                                 'observedContent': state['content'],

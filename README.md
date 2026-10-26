@@ -58,7 +58,8 @@ includes the two required editors.
 ## Diagnostic capture
 
 `python3 scripts/diagnose.py --variant baseline` (or `candidate`) under Xvfb
-runs three additional fresh-profile LVCE opens with Chromium task tracing and temporary RPC markers.
+runs three additional fresh-profile LVCE opens with Chromium task tracing, temporary
+RPC markers and a DOM observer, followed by three observer-only opens without tracing.
 The baseline lock pins the official v0.126.2 artifact; the candidate uses the
 current editor lock. CI uploads these as separate `diagnostic-*` artifacts.
 Trace JSON can be opened in Perfetto or Chrome's trace viewer. CDP injects
@@ -79,3 +80,12 @@ published timing report. The regular three-trial protocol stays unchanged.
 `control-lvce` contains three additional untraced protocol-v1 trials of the
 baseline package from the same workflow. Compare these with the candidate’s
 ordinary `open-lvce` results; instrumented diagnostics remain separate.
+
+Diagnostic page observations record mouse press/release, changes to selected URI
+and rendered text, and focus changes using the page's performance clock. Trace
+marks correlate those observations with page/worker RPCs on Chromium's trace
+clock. Each capture includes the observer callback count and read cost. Reading
+`innerText` can force layout, and mutation callbacks precede paint: these are
+readiness diagnostics, not proof of pixels presented. Compare observer-only
+trials with the separate untraced controls to assess perturbation. Neither kind
+of diagnostic trial is published as protocol-v1 acceptance evidence.

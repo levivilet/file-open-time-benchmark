@@ -74,10 +74,21 @@ class Page:
             self.traced_workers.append(worker['targetInfo']['url'])
         if not self.traced_workers:
             raise RuntimeError('no existing workers attached for RPC tracing')
+        self.evaluate(expression)
         self.call('Tracing.start', transferMode='ReturnAsStream',
                   categories='toplevel,devtools.timeline,blink.user_timing,'
                              'disabled-by-default-devtools.timeline')
         self.timings = []
+
+    def start_dom_observer(self, fixture):
+        expression = Path(__file__).with_name('dom_trace.js').read_text()
+        if self.evaluate(f'({expression})({json.dumps(str(fixture))})') is not True:
+            raise RuntimeError('DOM observer injection failed')
+        if self.timings is None:
+            self.timings = []
+
+    def dom_observations(self):
+        return self.evaluate('globalThis.__fileOpenDomTrace()')
 
     def stop_trace(self, destination):
         self.call('Tracing.end')

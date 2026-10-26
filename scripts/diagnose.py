@@ -25,7 +25,13 @@ def main():
     install.extract(editor, archive, apps / 'lvce')
     output = ROOT / 'results' / 'diagnostic' / args.variant
     output.mkdir(parents=True, exist_ok=True)
-    trials = [benchmark.trial(editor, output / f'trace-{index}.json') for index in range(1, 4)]
+    trials = [benchmark.trial(editor, output / f'trace-{index}.json', observe_dom=True) for index in range(1, 4)]
+    observer_trials = [benchmark.trial(editor, observe_dom=True) for _ in range(3)]
+    for item in [*trials, *observer_trials]:
+        if item['valid']:
+            observations = item['domObservations']
+            if observations['dropped'] or not any(entry['exact'] for entry in observations['entries']):
+                item.update(valid=False, error='DOM observation missing exact readiness or dropped entries')
     for index, item in enumerate(trials, 1):
         if not item['valid']:
             continue
@@ -42,9 +48,9 @@ def main():
                  'commit': os.environ.get('BENCHMARK_COMMIT')},
         'note': 'Tracing perturbs timing. These trials are excluded from the protocol-v1 report. '
                 'CDP durations include concurrent application work; do not subtract them to infer app time.',
-        'trials': trials,
+        'trials': trials, 'observerOnlyTrials': observer_trials,
     }, indent=2) + '\n')
-    if not all(item['valid'] for item in trials):
+    if not all(item['valid'] for item in [*trials, *observer_trials]):
         raise SystemExit('diagnostic capture failed; inspect diagnostic.json')
 
 
