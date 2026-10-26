@@ -26,6 +26,14 @@ def main():
     output = ROOT / 'results' / 'diagnostic' / args.variant
     output.mkdir(parents=True, exist_ok=True)
     trials = [benchmark.trial(editor, output / f'trace-{index}.json') for index in range(1, 4)]
+    for index, item in enumerate(trials, 1):
+        if not item['valid']:
+            continue
+        events = json.loads((output / f'trace-{index}.json').read_text())['traceEvents']
+        markers = [event for event in events if event.get('name', '').startswith('file-open-rpc:')]
+        item['rpcMarkerCount'] = len(markers)
+        if not markers:
+            item.update(valid=False, error='trace contains no RPC markers')
     (output / 'diagnostic.json').write_text(json.dumps({
         'diagnosticOnly': True, 'editor': editor,
         'host': {'machine': platform.machine(), 'kernel': platform.release(),

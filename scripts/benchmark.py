@@ -125,6 +125,7 @@ def trial(editor, trace_path=None):
                             page.stop_trace(trace_path)
                         return {'valid': True, 'seconds': ended - started,
                                 **({'diagnosticOnly': True, 'cdpCalls': timings,
+                                    'tracedWorkers': page.traced_workers,
                                     'measurementStarted': started, 'measurementEnded': ended}
                                    if trace_path is not None else {}),
                                 'documentIdentity': state['identity'],

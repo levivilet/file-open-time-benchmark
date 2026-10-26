@@ -1,6 +1,7 @@
 """Small CDP client for real explorer clicks and visible-document checks."""
 import base64
 import json
+from pathlib import Path
 import time
 import urllib.request
 
@@ -31,10 +32,13 @@ class Page:
                     raise TimeoutError('Editor never exposed a page over CDP')
                 time.sleep(.25)
 
-    def call(self, method, **params):
+    def call(self, method, session_id=None, **params):
         started = time.monotonic() if self.timings is not None else None
         self.counter += 1
-        self.socket.send(json.dumps({'id': self.counter, 'method': method, 'params': params}))
+        request = {'id': self.counter, 'method': method, 'params': params}
+        if session_id is not None:
+            request['sessionId'] = session_id
+        self.socket.send(json.dumps(request))
         while True:
             message = json.loads(self.socket.recv())
             if message.get('id') == self.counter:
@@ -44,7 +48,7 @@ class Page:
                     self.timings.append({'method': method, 'started': started,
                                          'ended': time.monotonic()})
                 return message['result']
-            if message.get('method') == 'Tracing.tracingComplete':
+            if message.get('method') in ('Tracing.tracingComplete', 'Target.attachedToTarget'):
                 self.events.append(message)
 
     def wait_event(self, method):
@@ -55,10 +59,24 @@ class Page:
             self.events.append(json.loads(self.socket.recv()))
 
     def start_trace(self):
+        self.call('Target.setAutoAttach', autoAttach=True, waitForDebuggerOnStart=False,
+                  flatten=True)
+        workers = [event['params'] for event in self.events
+                   if event.get('method') == 'Target.attachedToTarget'
+                   and event['params']['targetInfo']['type'] == 'worker']
+        expression = Path(__file__).with_name('rpc_trace.js').read_text()
+        self.traced_workers = []
+        for worker in workers:
+            result = self.call('Runtime.evaluate', session_id=worker['sessionId'],
+                               expression=expression, returnByValue=True)
+            if result.get('exceptionDetails') or result.get('result', {}).get('value') is not True:
+                raise RuntimeError(f'RPC trace injection failed: {worker["targetInfo"]["url"]}')
+            self.traced_workers.append(worker['targetInfo']['url'])
+        if not self.traced_workers:
+            raise RuntimeError('no existing workers attached for RPC tracing')
         self.call('Tracing.start', transferMode='ReturnAsStream',
-                  categories='toplevel,devtools.timeline,blink.user_timing,v8,'
-                             'disabled-by-default-devtools.timeline,'
-                             'disabled-by-default-v8.cpu_profiler')
+                  categories='toplevel,devtools.timeline,blink.user_timing,'
+                             'disabled-by-default-devtools.timeline')
         self.timings = []
 
     def stop_trace(self, destination):
