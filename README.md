@@ -54,3 +54,49 @@ python3 scripts/report.py --input results/editors --output .tmp/pages
 Other IDEs can be added when they expose a comparable accessible Explorer item
 and a verifiable visible-document completion signal. The current report only
 includes the two required editors.
+
+## Diagnostic capture
+
+`python3 scripts/diagnose.py --variant baseline` (or `candidate`) under Xvfb
+runs three additional fresh-profile LVCE opens with Chromium task tracing, temporary
+RPC markers and a DOM observer, followed by three observer-only opens without tracing.
+The baseline lock pins the official v0.126.3 artifact; the candidate uses the
+current editor lock. CI uploads these as separate `diagnostic-*` artifacts.
+Trace JSON can be opened in Perfetto or Chrome's trace viewer. CDP injects
+MessagePort wrappers into disposable worker contexts, recording only method
+names, request IDs and per-worker port IDs, without arguments or results.
+Match a sent request and received reply on the same thread/port/ID to measure
+its round trip; replies may include application work and transit. Receive
+markers run after existing message listeners. These hooks never enter shipped
+application packages. CPU profiling is disabled because Chromium starts worker
+profilers lazily on first messages, distorting the measured path.
+
+`diagnostic.json` records the CDP calls and click/completion boundaries using
+the host monotonic clock. Call durations include concurrent application work
+and must not be subtracted from elapsed time to infer application latency.
+Tracing can perturb scheduling, so these trials are never included in the
+published timing report. The regular three-trial protocol stays unchanged.
+
+`control-lvce` contains three additional untraced protocol-v1 trials of the
+baseline package from the same workflow. Compare these with the candidate’s
+ordinary `open-lvce` results; instrumented diagnostics remain separate.
+
+Diagnostic page observations record mouse press/release, changes to selected URI
+and rendered text, and focus changes using the page's performance clock. Trace
+marks correlate those observations with page/worker RPCs on Chromium's trace
+clock. Observation continues for 250 ms after the original completion boundary to capture
+later focus and commits; this delay is excluded from the recorded duration. Each
+capture includes the observer callback count and read cost. Reading
+`innerText` can force layout, and mutation callbacks precede paint: these are
+readiness diagnostics, not proof of pixels presented. Compare observer-only
+trials with the separate untraced controls to assess perturbation. Neither kind
+of diagnostic trial is published as protocol-v1 acceptance evidence.
+
+The candidate diagnostic job also runs three traced and three observer-only
+frame-wait ablations. A temporary hook in the renderer worker replaces animation
+frame requests with timers and synthetic eligibility timestamps, removing both
+vsync waits and the scheduler's 16 ms throttle. Trace marks and observed elapsed
+times retain real clocks. This deliberately broad ablation tests the causal
+contribution of scheduling barriers; it is not a proposed production policy,
+correctness coverage, or accepted benchmark result. Normal diagnostics record
+frame requests/callbacks without replacing them. All hooks are disposable.

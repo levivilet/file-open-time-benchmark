@@ -1,5 +1,7 @@
 """Small CDP client for real explorer clicks and visible-document checks."""
+import base64
 import json
+from pathlib import Path
 import time
 import urllib.request
 
@@ -19,6 +21,8 @@ class Page:
                 self.socket = websocket.create_connection(target['webSocketDebuggerUrl'], timeout=30,
                                                            suppress_origin=True)
                 self.counter = 0
+                self.events = []
+                self.timings = None
                 self.call('Page.enable')
                 self.call('Runtime.enable')
                 self.call('Accessibility.enable')
@@ -28,15 +32,97 @@ class Page:
                     raise TimeoutError('Editor never exposed a page over CDP')
                 time.sleep(.25)
 
-    def call(self, method, **params):
+    def call(self, method, session_id=None, **params):
+        started = time.monotonic() if self.timings is not None else None
         self.counter += 1
-        self.socket.send(json.dumps({'id': self.counter, 'method': method, 'params': params}))
+        request = {'id': self.counter, 'method': method, 'params': params}
+        if session_id is not None:
+            request['sessionId'] = session_id
+        self.socket.send(json.dumps(request))
         while True:
             message = json.loads(self.socket.recv())
             if message.get('id') == self.counter:
                 if 'error' in message:
                     raise RuntimeError(message['error'])
+                if self.timings is not None:
+                    self.timings.append({'method': method, 'started': started,
+                                         'ended': time.monotonic()})
                 return message['result']
+            if message.get('method') in ('Tracing.tracingComplete', 'Target.attachedToTarget'):
+                self.events.append(message)
+
+    def wait_event(self, method):
+        while True:
+            for index, event in enumerate(self.events):
+                if event.get('method') == method:
+                    return self.events.pop(index)['params']
+            self.events.append(json.loads(self.socket.recv()))
+
+    def start_trace(self):
+        self.call('Target.setAutoAttach', autoAttach=True, waitForDebuggerOnStart=False,
+                  flatten=True)
+        workers = [event['params'] for event in self.events
+                   if event.get('method') == 'Target.attachedToTarget'
+                   and event['params']['targetInfo']['type'] == 'worker']
+        expression = Path(__file__).with_name('rpc_trace.js').read_text()
+        self.traced_workers = []
+        for worker in workers:
+            result = self.call('Runtime.evaluate', session_id=worker['sessionId'],
+                               expression=expression, returnByValue=True)
+            if result.get('exceptionDetails') or result.get('result', {}).get('value') is not True:
+                raise RuntimeError(f'RPC trace injection failed: {worker["targetInfo"]["url"]}')
+            self.traced_workers.append(worker['targetInfo']['url'])
+        if not self.traced_workers:
+            raise RuntimeError('no existing workers attached for RPC tracing')
+        self.evaluate(expression)
+        self.call('Tracing.start', transferMode='ReturnAsStream',
+                  categories='toplevel,devtools.timeline,blink.user_timing,'
+                             'disabled-by-default-devtools.timeline')
+        self.timings = []
+
+    def ablate_frame_waits(self):
+        self.call('Target.setAutoAttach', autoAttach=True, waitForDebuggerOnStart=False,
+                  flatten=True)
+        workers = [event['params'] for event in self.events
+                   if event.get('method') == 'Target.attachedToTarget'
+                   and '/renderer-worker/' in event['params']['targetInfo']['url']]
+        if len(workers) != 1:
+            raise RuntimeError(f'expected one renderer worker, found {len(workers)}')
+        result = self.call('Runtime.evaluate', session_id=workers[0]['sessionId'],
+                           expression=Path(__file__).with_name('frame_ablation.js').read_text(),
+                           returnByValue=True)
+        if result.get('exceptionDetails') or result.get('result', {}).get('value') is not True:
+            raise RuntimeError('frame-wait ablation injection failed')
+
+    def start_dom_observer(self, fixture):
+        expression = Path(__file__).with_name('dom_trace.js').read_text()
+        if self.evaluate(f'({expression})({json.dumps(str(fixture))})') is not True:
+            raise RuntimeError('DOM observer injection failed')
+        if self.timings is None:
+            self.timings = []
+
+    def dom_observations(self):
+        # Keep observing after the original completion boundary to capture later focus/commits.
+        return self.evaluate('new Promise(resolve => setTimeout(() => '
+                             'resolve(globalThis.__fileOpenDomTrace()), 250))')
+
+    def stop_trace(self, destination):
+        self.call('Tracing.end')
+        complete = self.wait_event('Tracing.tracingComplete')
+        stream = complete['stream']
+        try:
+            with destination.open('wb') as output:
+                while True:
+                    chunk = self.call('IO.read', handle=stream, size=1048576)
+                    data = chunk.get('data', '')
+                    output.write(base64.b64decode(data) if chunk.get('base64Encoded')
+                                 else data.encode())
+                    if chunk.get('eof'):
+                        break
+        finally:
+            self.call('IO.close', handle=stream)
+        if complete.get('dataLossOccurred'):
+            raise RuntimeError('diagnostic trace lost events')
 
     def evaluate(self, expression):
         result = self.call('Runtime.evaluate', expression=expression, returnByValue=True,
