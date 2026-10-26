@@ -75,3 +75,11 @@ the host monotonic clock. Call durations include concurrent application work
 and must not be subtracted from elapsed time to infer application latency.
 Tracing can perturb scheduling, so these trials are never included in the
 published timing report. The regular three-trial protocol stays unchanged.
+
+The diagnostic `candidate-coalesced` variant is a controlled ablation: a
+CDP-injected hook acknowledges the first main-area pending render without
+forwarding it. The later focus render must still produce the expected document.
+It tests whether two successive frame commits contribute avoidable latency;
+it is not a production fix or lifecycle-regression validation. This variant is
+kept separate from both ordinary release measurements and the report. Each
+trace must contain the explicit ablation marker to count as a valid experiment.

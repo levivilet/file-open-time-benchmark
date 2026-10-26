@@ -63,7 +63,7 @@ def fixture_matches(editor_id, state, fixture):
     return identity_matches and content == CONTENT
 
 
-def trial(editor, trace_path=None):
+def trial(editor, trace_path=None, skip_first_pending=False):
     with tempfile.TemporaryDirectory(prefix='file-open-time-') as temporary:
         root = Path(temporary)
         home = root / 'home'
@@ -105,7 +105,7 @@ def trial(editor, trace_path=None):
                 time.sleep(10)
                 stage = 'read-before-state'
                 if trace_path is not None:
-                    page.start_trace()
+                    page.start_trace(skip_first_pending=skip_first_pending)
                 before = page.document_state(editor['id'])
                 if fixture_matches(editor['id'], before, fixture):
                     raise RuntimeError('fixture was already open before the measured explorer click')
@@ -126,6 +126,7 @@ def trial(editor, trace_path=None):
                         return {'valid': True, 'seconds': ended - started,
                                 **({'diagnosticOnly': True, 'cdpCalls': timings,
                                     'tracedWorkers': page.traced_workers,
+                                    'skipFirstPendingRender': skip_first_pending,
                                     'measurementStarted': started, 'measurementEnded': ended}
                                    if trace_path is not None else {}),
                                 'documentIdentity': state['identity'],

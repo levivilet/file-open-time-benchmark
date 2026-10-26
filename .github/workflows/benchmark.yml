@@ -49,7 +49,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant: [baseline, candidate]
+        variant: [baseline, candidate, candidate-coalesced]
     steps:
       - uses: actions/checkout@v5
       - name: Install desktop dependencies
