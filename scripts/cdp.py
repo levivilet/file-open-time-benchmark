@@ -1,4 +1,5 @@
 """Small CDP client for real explorer clicks and visible-document checks."""
+import base64
 import json
 import time
 import urllib.request
@@ -19,6 +20,8 @@ class Page:
                 self.socket = websocket.create_connection(target['webSocketDebuggerUrl'], timeout=30,
                                                            suppress_origin=True)
                 self.counter = 0
+                self.events = []
+                self.timings = None
                 self.call('Page.enable')
                 self.call('Runtime.enable')
                 self.call('Accessibility.enable')
@@ -29,6 +32,7 @@ class Page:
                 time.sleep(.25)
 
     def call(self, method, **params):
+        started = time.monotonic() if self.timings is not None else None
         self.counter += 1
         self.socket.send(json.dumps({'id': self.counter, 'method': method, 'params': params}))
         while True:
@@ -36,7 +40,44 @@ class Page:
             if message.get('id') == self.counter:
                 if 'error' in message:
                     raise RuntimeError(message['error'])
+                if self.timings is not None:
+                    self.timings.append({'method': method, 'started': started,
+                                         'ended': time.monotonic()})
                 return message['result']
+            if message.get('method') == 'Tracing.tracingComplete':
+                self.events.append(message)
+
+    def wait_event(self, method):
+        while True:
+            for index, event in enumerate(self.events):
+                if event.get('method') == method:
+                    return self.events.pop(index)['params']
+            self.events.append(json.loads(self.socket.recv()))
+
+    def start_trace(self):
+        self.call('Tracing.start', transferMode='ReturnAsStream',
+                  categories='toplevel,devtools.timeline,blink.user_timing,v8,'
+                             'disabled-by-default-devtools.timeline,'
+                             'disabled-by-default-v8.cpu_profiler')
+        self.timings = []
+
+    def stop_trace(self, destination):
+        self.call('Tracing.end')
+        complete = self.wait_event('Tracing.tracingComplete')
+        stream = complete['stream']
+        try:
+            with destination.open('wb') as output:
+                while True:
+                    chunk = self.call('IO.read', handle=stream, size=1048576)
+                    data = chunk.get('data', '')
+                    output.write(base64.b64decode(data) if chunk.get('base64Encoded')
+                                 else data.encode())
+                    if chunk.get('eof'):
+                        break
+        finally:
+            self.call('IO.close', handle=stream)
+        if complete.get('dataLossOccurred'):
+            raise RuntimeError('diagnostic trace lost events')
 
     def evaluate(self, expression):
         result = self.call('Runtime.evaluate', expression=expression, returnByValue=True,

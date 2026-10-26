@@ -54,3 +54,19 @@ python3 scripts/report.py --input results/editors --output .tmp/pages
 Other IDEs can be added when they expose a comparable accessible Explorer item
 and a verifiable visible-document completion signal. The current report only
 includes the two required editors.
+
+## Diagnostic capture
+
+`python3 scripts/diagnose.py --variant baseline` (or `candidate`) under Xvfb
+runs three additional fresh-profile LVCE opens with Chromium task/CPU tracing.
+The baseline lock pins the official v0.126.1 artifact; the candidate uses the
+current editor lock. CI uploads these as separate `diagnostic-*` artifacts.
+Trace JSON can be opened in Perfetto or Chrome's trace viewer. Worker CPU
+samples and message tasks can identify active work and scheduling gaps; they
+do not by themselves measure every asynchronous application stage.
+
+`diagnostic.json` records the CDP calls and click/completion boundaries using
+the host monotonic clock. Call durations include concurrent application work
+and must not be subtracted from elapsed time to infer application latency.
+Tracing can perturb scheduling, so these trials are never included in the
+published timing report. The regular three-trial protocol stays unchanged.
