@@ -84,7 +84,9 @@ ordinary `open-lvce` results; instrumented diagnostics remain separate.
 Diagnostic page observations record mouse press/release, changes to selected URI
 and rendered text, and focus changes using the page's performance clock. Trace
 marks correlate those observations with page/worker RPCs on Chromium's trace
-clock. Each capture includes the observer callback count and read cost. Reading
+clock. Observation continues for 250 ms after the original completion boundary to capture
+later focus and commits; this delay is excluded from the recorded duration. Each
+capture includes the observer callback count and read cost. Reading
 `innerText` can force layout, and mutation callbacks precede paint: these are
 readiness diagnostics, not proof of pixels presented. Compare observer-only
 trials with the separate untraced controls to assess perturbation. Neither kind

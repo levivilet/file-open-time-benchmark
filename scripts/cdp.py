@@ -88,7 +88,9 @@ class Page:
             self.timings = []
 
     def dom_observations(self):
-        return self.evaluate('globalThis.__fileOpenDomTrace()')
+        # Keep observing after the original completion boundary to capture later focus/commits.
+        return self.evaluate('new Promise(resolve => setTimeout(() => '
+                             'resolve(globalThis.__fileOpenDomTrace()), 250))')
 
     def stop_trace(self, destination):
         self.call('Tracing.end')
