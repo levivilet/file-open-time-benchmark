@@ -60,7 +60,7 @@ includes the two required editors.
 `python3 scripts/diagnose.py --variant baseline` (or `candidate`) under Xvfb
 runs three additional fresh-profile LVCE opens with Chromium task tracing, temporary
 RPC markers and a DOM observer, followed by three observer-only opens without tracing.
-The baseline lock pins the official v0.126.2 artifact; the candidate uses the
+The baseline lock pins the official v0.126.3 artifact; the candidate uses the
 current editor lock. CI uploads these as separate `diagnostic-*` artifacts.
 Trace JSON can be opened in Perfetto or Chrome's trace viewer. CDP injects
 MessagePort wrappers into disposable worker contexts, recording only method
